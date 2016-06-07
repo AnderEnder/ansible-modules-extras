@@ -36,6 +36,7 @@ author:
     - "Alexander Gubin (@alxgu)"
     - "Thomas O'Donnell (@andytom)"
     - "Robin Roth (@robinro)"
+    - "Andrii Radyk (@AnderEnder)"
 version_added: "1.2"
 short_description: Manage packages on SUSE and openSUSE
 description:
@@ -72,7 +73,7 @@ options:
     disable_recommends:
         version_added: "1.8"
         description:
-          - Corresponds to the C(--no-recommends) option for I(zypper). Default behavior (C(yes)) modifies zypper's default behavior; C(no) does install recommended packages. 
+          - Corresponds to the C(--no-recommends) option for I(zypper). Default behavior (C(yes)) modifies zypper's default behavior; C(no) does install recommended packages.
         required: false
         default: "yes"
         choices: [ "yes", "no" ]
@@ -83,9 +84,17 @@ options:
         required: false
         default: "no"
         choices: [ "yes", "no" ]
+    refresh:
+        version_added: "2.2"
+        description:
+          - Run the equivalent of C(zypper refresh) before the operation. Can be run as part of the package installation or as a separate step.
+        required: false
+        default: "no"
+        choices: [ "yes", "no" ]
+
 
 # informational: requirements for nodes
-requirements: 
+requirements:
     - "zypper >= 1.0  # included in openSuSE >= 11.1 or SuSE Linux Enterprise Server/Desktop >= 11.0"
     - rpm
 '''
@@ -114,6 +123,12 @@ EXAMPLES = '''
 
 # Apply all available patches
 - zypper: name=* state=latest type=patch
+
+# Refresh repositories and update package "openssl"
+- zypper: name=openssl state=present refresh=yes
+
+# Refresh repositories only
+- zypper: refresh=yes
 '''
 
 
@@ -160,7 +175,7 @@ def parse_zypper_xml(m, cmd, fail_not_found=True, packages=None):
         # zypper exit codes
         # 0: success
         # 106: signature verification failed
-        # 103: zypper was upgraded, run same command again 
+        # 103: zypper was upgraded, run same command again
         if packages is None:
             firstrun = True
             packages = {}
@@ -185,14 +200,15 @@ def parse_zypper_xml(m, cmd, fail_not_found=True, packages=None):
 def get_cmd(m, subcommand):
     "puts together the basic zypper command arguments with those passed to the module"
     is_install = subcommand in ['install', 'update', 'patch']
+    is_refresh = subcommand == 'refresh'
     cmd = ['/usr/bin/zypper', '--quiet', '--non-interactive', '--xmlout']
 
     # add global options before zypper command
-    if is_install and m.params['disable_gpg_check']:
+    if (is_install or is_refresh) and m.params['disable_gpg_check']:
         cmd.append('--no-gpg-checks')
 
     cmd.append(subcommand)
-    if subcommand != 'patch':
+    if subcommand != 'patch' and not is_refresh:
         cmd.extend(['--type', m.params['type']])
     if m.check_mode and subcommand != 'search':
         cmd.append('--dry-run')
@@ -325,24 +341,56 @@ def package_absent(m, name):
 
     return retvals
 
+
+def repo_refresh(m):
+    "update the repositories"
+    retvals = {'rc': 0, 'stdout': '', 'stderr': '', 'changed': False, 'failed': False}
+
+    cmd = get_cmd(m, 'refresh')
+
+    retvals['cmd'] = cmd
+    result, retvals['rc'], retvals['stdout'], retvals['stderr'] = parse_zypper_xml(m, cmd)
+    if retvals['rc'] == 0:
+        # refresh was successed
+        retvals['changed'] = True
+    else:
+        retvals['failed'] = True
+
+    return retvals
+
 # ===========================================
 # Main control flow
 
 def main():
     module = AnsibleModule(
         argument_spec = dict(
-            name = dict(required=True, aliases=['pkg'], type='list'),
+            name = dict(required=False, aliases=['pkg'], type='list'),
             state = dict(required=False, default='present', choices=['absent', 'installed', 'latest', 'present', 'removed']),
             type = dict(required=False, default='package', choices=['package', 'patch', 'pattern', 'product', 'srcpackage', 'application']),
             disable_gpg_check = dict(required=False, default='no', type='bool'),
             disable_recommends = dict(required=False, default='yes', type='bool'),
             force = dict(required=False, default='no', type='bool'),
+            refresh = dict(required=False, default='no', type='bool'),
         ),
+        required_one_of = [['name', 'refresh']],
         supports_check_mode = True
     )
 
     name = module.params['name']
     state = module.params['state']
+    refresh  = module.params['refresh']
+
+    # Refresh repositories
+    if refresh:
+        retvals = repo_refresh(module)
+
+        failed = retvals['failed']
+        del retvals['failed']
+        if failed:
+            module.fail_json(msg="Zypper refresh run failed.", **retvals)
+
+        if not name:
+            module.exit_json(name=name, state=state, refresh=refresh, **retvals)
 
     # Perform requested action
     if name == ['*'] and state == 'latest':
@@ -366,7 +414,7 @@ def main():
         del retvals['stdout']
         del retvals['stderr']
 
-    module.exit_json(name=name, state=state, **retvals)
+    module.exit_json(name=name, state=state, refresh=refresh, **retvals)
 
 # import module snippets
 from ansible.module_utils.basic import *
