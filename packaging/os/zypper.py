@@ -350,11 +350,6 @@ def repo_refresh(m):
 
     retvals['cmd'] = cmd
     result, retvals['rc'], retvals['stdout'], retvals['stderr'] = parse_zypper_xml(m, cmd)
-    if retvals['rc'] == 0:
-        # refresh was successed
-        retvals['changed'] = True
-    else:
-        retvals['failed'] = True
 
     return retvals
 
@@ -384,9 +379,7 @@ def main():
     if refresh:
         retvals = repo_refresh(module)
 
-        failed = retvals['failed']
-        del retvals['failed']
-        if failed:
+        if retvals['rc'] != 0:
             module.fail_json(msg="Zypper refresh run failed.", **retvals)
 
         if not name:
