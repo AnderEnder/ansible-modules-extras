@@ -91,6 +91,7 @@ options:
         required: false
         default: "no"
         choices: [ "yes", "no" ]
+        aliases: [ "update_cache" ]
 
 
 # informational: requirements for nodes
@@ -365,7 +366,7 @@ def main():
             disable_gpg_check = dict(required=False, default='no', type='bool'),
             disable_recommends = dict(required=False, default='yes', type='bool'),
             force = dict(required=False, default='no', type='bool'),
-            refresh = dict(required=False, default='no', type='bool'),
+            refresh = dict(required=False, aliases=['update_cache'], default='no', type='bool'),
         ),
         required_one_of = [['name', 'refresh']],
         supports_check_mode = True
