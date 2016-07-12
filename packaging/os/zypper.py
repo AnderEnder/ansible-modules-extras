@@ -84,14 +84,14 @@ options:
         required: false
         default: "no"
         choices: [ "yes", "no" ]
-    refresh:
+    update_cache:
         version_added: "2.2"
         description:
-          - Run the equivalent of C(zypper refresh) before the operation. Can be run as part of the package installation or as a separate step.
+          - Run the equivalent of C(zypper refresh) before the operation.
         required: false
         default: "no"
         choices: [ "yes", "no" ]
-        aliases: [ "update_cache" ]
+        aliases: [ "refresh" ]
 
 
 # informational: requirements for nodes
@@ -126,10 +126,7 @@ EXAMPLES = '''
 - zypper: name=* state=latest type=patch
 
 # Refresh repositories and update package "openssl"
-- zypper: name=openssl state=present refresh=yes
-
-# Refresh repositories only
-- zypper: refresh=yes
+- zypper: name=openssl state=present update_cache=yes
 '''
 
 
@@ -360,31 +357,27 @@ def repo_refresh(m):
 def main():
     module = AnsibleModule(
         argument_spec = dict(
-            name = dict(required=False, aliases=['pkg'], type='list'),
+            name = dict(required=True, aliases=['pkg'], type='list'),
             state = dict(required=False, default='present', choices=['absent', 'installed', 'latest', 'present', 'removed']),
             type = dict(required=False, default='package', choices=['package', 'patch', 'pattern', 'product', 'srcpackage', 'application']),
             disable_gpg_check = dict(required=False, default='no', type='bool'),
             disable_recommends = dict(required=False, default='yes', type='bool'),
             force = dict(required=False, default='no', type='bool'),
-            refresh = dict(required=False, aliases=['update_cache'], default='no', type='bool'),
+            update_cache = dict(required=False, aliases=['refresh'], default='no', type='bool'),
         ),
-        required_one_of = [['name', 'refresh']],
         supports_check_mode = True
     )
 
     name = module.params['name']
     state = module.params['state']
-    refresh  = module.params['refresh']
+    update_cache = module.params['update_cache']
 
     # Refresh repositories
-    if refresh:
+    if update_cache:
         retvals = repo_refresh(module)
 
         if retvals['rc'] != 0:
             module.fail_json(msg="Zypper refresh run failed.", **retvals)
-
-        if not name:
-            module.exit_json(name=name, state=state, refresh=refresh, **retvals)
 
     # Perform requested action
     if name == ['*'] and state == 'latest':
@@ -408,7 +401,7 @@ def main():
         del retvals['stdout']
         del retvals['stderr']
 
-    module.exit_json(name=name, state=state, refresh=refresh, **retvals)
+    module.exit_json(name=name, state=state, update_cache=update_cache, **retvals)
 
 # import module snippets
 from ansible.module_utils.basic import *
